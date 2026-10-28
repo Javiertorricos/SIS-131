@@ -1,0 +1,70 @@
+import sys
+import termios
+no_echo_t, original_t = None, None
+
+def configurar_terminal():
+    global original_t
+    fd = sys.stdin.fileno()
+    original_t = termios.tcgetattr(fd)
+    raw = termios.tcgetattr(fd)
+    raw[3] = raw[3] & ~termios.ECHO & ~termios.ICANON # Sin echo y modo no canónico
+    termios.tcsetattr(fd, termios.TCSADRAIN, raw)
+
+def restaurar_terminal():
+    if original_t:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original_t)
+
+# Memoria simulada de 256 bytes (0x00 a 0xFF)
+memoria = [0] * 256
+
+# Variables de la Cola FIFO
+KB_HEAD = 0x78
+KB_TAIL = 0x79
+KB_COUNT = 0x7A
+memoria[KB_HEAD] = 0x70
+memoria[KB_TAIL] = 0x70
+memoria[KB_COUNT] = 0
+
+def imprimir_vram():
+    print("\n--- PANTALLA VRAM (4x4) ---")
+    for f in range(4):
+        fila_str = ""
+        for c in range(4):
+            dir_vram = 0xF0 + (f * 4) + c
+            char = chr(memoria[dir_vram]) if memoria[dir_vram] != 0 else '.'
+            fila_str += f" [{char}] "
+        print(fila_str)
+    print("--------------------------")
+
+def main():
+    configurar_terminal()
+    cursor = 0xF0
+    print("Simulador de Terminal VRAM y Teclado FIFO.")
+    print("Escribe caracteres (Presiona ESC para salir):")
+    
+    try:
+        while True:
+            # Simular lectura de teclado no bloqueante
+            import select
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                tecla = sys.stdin.read(1)
+                if ord(tecla) == 27: # ESC para salir
+                    break
+                
+                # Manejo de Backspace (ASCII 0x08)
+                if ord(tecla) == 8 or ord(tecla) == 127:
+                    if cursor > 0xF0:
+                        cursor -= 1
+                        memoria[cursor] = 0x20 # Espacio en blanco
+                else:
+                    if cursor <= 0xFF:
+                        memoria[cursor] = ord(tecla)
+                        cursor += 1
+                
+                imprimir_vram()
+    finally:
+        restaurar_terminal()
+        print("\nSimulador finalizado.")
+
+if __name__ == "__main__":
+    main()
